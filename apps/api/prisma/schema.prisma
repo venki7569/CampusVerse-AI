@@ -1,0 +1,552 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum RoleName {
+  SUPER_ADMIN
+  CAMPUS_ADMIN
+  DEPARTMENT_ADMIN
+  FACULTY
+  STUDENT
+  MAINTENANCE_STAFF
+  SECURITY_STAFF
+}
+
+enum OperationalStatus {
+  ACTIVE
+  INACTIVE
+  UNDER_MAINTENANCE
+  DAMAGED
+  RETIRED
+}
+
+enum RoomOccupancyStatus {
+  AVAILABLE
+  OCCUPIED
+  UNDER_MAINTENANCE
+  RESERVED
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum MaintenanceStatus {
+  REPORTED
+  ASSIGNED
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+  REJECTED
+  CANCELLED
+}
+
+enum AnnouncementStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  EXPIRED
+  ARCHIVED
+  CANCELLED
+}
+
+enum AnnouncementPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum AnnouncementCategory {
+  GENERAL
+  ACADEMIC
+  EXAMINATION
+  EVENT
+  MAINTENANCE
+  EMERGENCY
+  TRANSPORT
+  FACILITY
+  SECURITY
+  OTHER
+}
+
+enum AnnouncementAudienceType {
+  ALL
+  ROLE
+  DEPARTMENT
+  BUILDING
+  USER
+}
+
+enum IoTDeviceType {
+  ELECTRICITY_METER
+  WATER_METER
+  OCCUPANCY_SENSOR
+  TEMPERATURE_SENSOR
+  HUMIDITY_SENSOR
+  AIR_QUALITY_SENSOR
+  LIGHT_SENSOR
+  PARKING_SENSOR
+  OTHER
+}
+
+enum IoTDeviceStatus {
+  ONLINE
+  OFFLINE
+  STALE
+  MAINTENANCE
+  ARCHIVED
+}
+
+// User and RBAC
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  isActive     Boolean  @default(true)
+  departmentId String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department            Department?              @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  userRoles             UserRole[]
+  maintenanceRequests   MaintenanceRequest[]     @relation("Reporter")
+  maintenanceAssignments MaintenanceAssignment[] @relation("Technician")
+  refreshTokens         RefreshToken[]
+  announcementsAuthored Announcement[]           @relation("AnnouncementAuthor")
+  announcementsTargeted Announcement[]           @relation("AnnouncementTargetUser")
+  announcementReads     AnnouncementRead[]
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        RoleName @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  action      String   // e.g. "create:user", "read:asset"
+  resource    String   // e.g. "user", "asset"
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@unique([action, resource])
+}
+
+model UserRole {
+  id        String   @id @default(uuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+}
+
+model RolePermission {
+  id           String   @id @default(uuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime @default(now())
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Facilities
+model Department {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  headName    String?
+  contactInfo String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  rooms             Room[]
+  assets            Asset[]
+  electricityMeters ElectricityMeter[]
+  users             User[]
+  announcements     Announcement[]
+}
+
+model Building {
+  id                String   @id @default(uuid())
+  code              String   @unique
+  name              String
+  location          String?
+  coordinates       String?  // JSON or string "lat,lng"
+  operationalStatus OperationalStatus @default(ACTIVE)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  floors            Floor[]
+  assets            Asset[]
+  electricityMeters ElectricityMeter[]
+  waterMeters       WaterMeter[]
+  parkingAreas      ParkingArea[]
+  announcements     Announcement[]
+  iotDevices        IoTDevice[]
+}
+
+model Floor {
+  id        String   @id @default(uuid())
+  level     String   // e.g. "Ground", "1", "2"
+  buildingId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+  rooms    Room[]
+  iotDevices IoTDevice[]
+
+  @@unique([level, buildingId])
+}
+
+model Room {
+  id                String   @id @default(uuid())
+  roomNumber        String
+  floorId           String
+  departmentId      String?
+  capacity          Int      @default(0)
+  roomType          String   // CLASSROOM, LABORATORY, OFFICE, etc.
+  operationalStatus OperationalStatus @default(ACTIVE)
+  occupancyStatus   RoomOccupancyStatus @default(AVAILABLE)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([roomNumber, floorId])
+
+  floor      Floor       @relation(fields: [floorId], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  assets             Asset[]
+  maintenanceRequests MaintenanceRequest[]
+  roomAllocations    RoomAllocation[]
+  iotDevices         IoTDevice[]
+}
+
+model RoomAllocation {
+  id        String   @id @default(uuid())
+  roomId    String
+  purpose   String
+  startTime DateTime
+  endTime   DateTime
+  createdAt DateTime @default(now())
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+}
+
+// Assets
+model AssetCategory {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assets Asset[]
+}
+
+model Vendor {
+  id          String   @id @default(uuid())
+  name        String
+  contactName String?
+  email       String?
+  phone       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assets Asset[]
+}
+
+model Asset {
+  id                String   @id @default(uuid())
+  assetTag          String   @unique
+  name              String
+  categoryId        String
+  vendorId          String?
+  departmentId      String?
+  buildingId        String?
+  roomId            String?
+  serialNumber      String?
+  purchaseDate      DateTime?
+  purchaseCost      Float?
+  warrantyExpiry    DateTime?
+  condition         String?  // Good, Fair, Poor
+  operationalStatus OperationalStatus @default(ACTIVE)
+  lastMaintenance   DateTime?
+  nextMaintenance   DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  category   AssetCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  vendor     Vendor?       @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  department Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  building   Building?     @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  room       Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  maintenanceRequests MaintenanceRequest[]
+  maintenanceHistory  MaintenanceHistory[]
+  iotDevices          IoTDevice[]
+}
+
+// Maintenance
+model MaintenanceRequest {
+  id          String   @id @default(uuid())
+  reporterId  String
+  title       String
+  description String
+  categoryId  String?  // ELECTRICAL, PLUMBING, IT
+  roomId      String?
+  assetId     String?
+  priority    MaintenancePriority @default(MEDIUM)
+  status      MaintenanceStatus   @default(REPORTED)
+  images      String[] // array of URLs
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  reporter User   @relation("Reporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  room     Room?  @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  asset    Asset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  assignments MaintenanceAssignment[]
+  comments    MaintenanceComment[]
+}
+
+model MaintenanceAssignment {
+  id           String   @id @default(uuid())
+  requestId    String
+  technicianId String
+  assignedAt   DateTime @default(now())
+
+  request    MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  technician User               @relation("Technician", fields: [technicianId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, technicianId])
+}
+
+model MaintenanceComment {
+  id         String   @id @default(uuid())
+  requestId  String
+  authorId   String
+  content    String
+  createdAt  DateTime @default(now())
+
+  request MaintenanceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+}
+
+model MaintenanceHistory {
+  id           String   @id @default(uuid())
+  assetId      String
+  action       String
+  technicianId String?
+  cost         Float?
+  notes        String?
+  performedAt  DateTime
+  createdAt    DateTime @default(now())
+
+  asset Asset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+}
+
+// Utilities
+model ElectricityMeter {
+  id           String   @id @default(uuid())
+  serialNumber String   @unique
+  buildingId   String?
+  departmentId String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  building   Building?   @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+
+  readings ElectricityReading[]
+  iotDevice IoTDevice?
+}
+
+model ElectricityReading {
+  id             String   @id @default(uuid())
+  meterId        String
+  kwhConsumption Float
+  readingTime    DateTime
+  createdAt      DateTime @default(now())
+
+  meter ElectricityMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)
+
+  @@index([meterId, readingTime])
+}
+
+model WaterMeter {
+  id           String   @id @default(uuid())
+  serialNumber String   @unique
+  buildingId   String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  building Building? @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+
+  readings WaterReading[]
+  iotDevice IoTDevice?
+}
+
+model WaterReading {
+  id               String   @id @default(uuid())
+  meterId          String
+  litersConsumption Float
+  readingTime      DateTime
+  createdAt        DateTime @default(now())
+
+  meter WaterMeter @relation(fields: [meterId], references: [id], onDelete: Cascade)
+
+  @@index([meterId, readingTime])
+}
+
+// Parking
+model ParkingArea {
+  id         String   @id @default(uuid())
+  name       String
+  location   String?
+  buildingId String?
+  totalSlots Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  building Building?     @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  slots    ParkingSlot[]
+}
+
+model ParkingSlot {
+  id            String   @id @default(uuid())
+  areaId        String
+  slotNumber    String
+  slotType      String   @default("STANDARD") // STANDARD, HANDICAP, EV, MOTORCYCLE, VISITOR
+  status        String   @default("AVAILABLE") // AVAILABLE, OCCUPIED, RESERVED, UNDER_MAINTENANCE
+  reservedForId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  area ParkingArea @relation(fields: [areaId], references: [id], onDelete: Cascade)
+
+  @@unique([areaId, slotNumber])
+  @@index([status])
+  @@index([reservedForId])
+}
+
+// Miscellaneous
+model Announcement {
+  id                  String                   @id @default(uuid())
+  title               String
+  content             String
+  authorId            String
+  category            AnnouncementCategory     @default(GENERAL)
+  priority            AnnouncementPriority     @default(NORMAL)
+  status              AnnouncementStatus       @default(DRAFT)
+  audienceType        AnnouncementAudienceType @default(ALL)
+  targetRole          RoleName?
+  targetDepartmentId  String?
+  targetBuildingId    String?
+  targetUserId        String?
+  scheduledAt         DateTime?
+  publishedAt         DateTime?
+  expiresAt           DateTime?
+  notificationsSentAt DateTime?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  author           User          @relation("AnnouncementAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  targetDepartment Department?   @relation(fields: [targetDepartmentId], references: [id], onDelete: SetNull)
+  targetBuilding   Building?     @relation(fields: [targetBuildingId], references: [id], onDelete: SetNull)
+  targetUser       User?         @relation("AnnouncementTargetUser", fields: [targetUserId], references: [id], onDelete: SetNull)
+  reads            AnnouncementRead[]
+
+  @@index([status, publishedAt])
+  @@index([authorId])
+  @@index([targetDepartmentId])
+  @@index([targetBuildingId])
+  @@index([scheduledAt])
+}
+
+model AnnouncementRead {
+  id             String   @id @default(uuid())
+  announcementId String
+  userId         String
+  readAt         DateTime @default(now())
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([userId])
+}
+
+// IoT / Operational Devices
+model IoTDevice {
+  id                 String          @id @default(uuid())
+  deviceId           String          @unique
+  name               String
+  type               IoTDeviceType
+  manufacturer       String?
+  model              String?
+  serialNumber       String?
+  buildingId         String?
+  floorId            String?
+  roomId             String?
+  assetId            String?
+  electricityMeterId String?         @unique
+  waterMeterId       String?         @unique
+  status             IoTDeviceStatus @default(OFFLINE)
+  lastSeenAt         DateTime?
+  ingestKeyHash      String?
+  metadata           Json?
+  isActive           Boolean         @default(true)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  building          Building?         @relation(fields: [buildingId], references: [id], onDelete: SetNull)
+  floor             Floor?            @relation(fields: [floorId], references: [id], onDelete: SetNull)
+  room              Room?             @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  asset             Asset?            @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  electricityMeter  ElectricityMeter? @relation(fields: [electricityMeterId], references: [id], onDelete: SetNull)
+  waterMeter        WaterMeter?       @relation(fields: [waterMeterId], references: [id], onDelete: SetNull)
+
+  @@index([type, status])
+  @@index([buildingId])
+  @@index([roomId])
+  @@index([lastSeenAt])
+  @@index([isActive])
+}

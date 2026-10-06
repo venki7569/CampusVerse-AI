@@ -1,0 +1,34 @@
+{
+  "name": "campusverse-ai",
+  "version": "1.0.0",
+  "description": "CampusVerse AI — smart campus operations platform",
+  "private": true,
+  "scripts": {
+    "dev:web": "npm run dev --workspace=apps/web",
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev": "npm run dev:api & npm run dev:web",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspace=apps/api",
+    "test:integration": "npm run test:integration --workspace=apps/api",
+    "verify:infra": "npm run verify:infra --workspace=apps/api",
+    "verify:seed": "npm run verify:seed --workspace=apps/api",
+    "typecheck": "npm run typecheck --workspace=apps/api && npm run typecheck --workspace=apps/web",
+    "lint": "npm run lint --workspace=apps/web",
+    "db:seed": "npm run db:seed --workspace=apps/api",
+    "prisma:validate": "npm run prisma:validate --workspace=apps/api",
+    "prisma:generate": "npm run prisma:generate --workspace=apps/api",
+    "prisma:migrate:deploy": "npm run prisma:migrate:deploy --workspace=apps/api",
+    "prisma:migrate:dev": "npm run prisma:migrate:dev --workspace=apps/api",
+    "prisma:push": "npm run prisma:push --workspace=apps/api",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
